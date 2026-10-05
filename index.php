@@ -7,7 +7,7 @@ require __DIR__ . '/includes/functions.php';
 
 $db = database();
 $action = (string) ($_GET['action'] ?? 'list');
-$allowedActions = ['list', 'create', 'edit'];
+$allowedActions = ['list', 'create', 'edit', 'view'];
 if (!in_array($action, $allowedActions, true)) {
     $action = 'list';
 }
@@ -19,14 +19,14 @@ $contact = [
 ];
 $contactId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
 
-if (($action === 'edit') && $contactId > 0) {
+if (in_array($action, ['edit', 'view'], true) && $contactId > 0) {
     $existingContact = contact_by_id($db, $contactId);
     if ($existingContact === false) {
         set_flash('error', 'That contact could not be found.');
         redirect('index.php');
     }
     $contact = $existingContact;
-} elseif ($action === 'edit') {
+} elseif (in_array($action, ['edit', 'view'], true)) {
     redirect('index.php');
 }
 
@@ -85,12 +85,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $query = trim((string) ($_GET['q'] ?? ''));
+$sort = (string) ($_GET['sort'] ?? 'name');
+$sortOptions = [
+    'name' => 'last_name ASC, first_name ASC, id ASC',
+    'company' => 'company ASC, last_name ASC, first_name ASC, id ASC',
+    'updated' => 'updated_at DESC, last_name ASC, first_name ASC, id ASC',
+];
+if (!isset($sortOptions[$sort])) {
+    $sort = 'name';
+}
 $page = max(1, filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT) ?: 1);
 $perPage = 10;
 $totalStatement = $db->prepare(
     'SELECT COUNT(*) FROM contacts
      WHERE (CHAR_LENGTH(:query) = 0 OR first_name LIKE :first_name OR last_name LIKE :last_name
-        OR email LIKE :email OR phone LIKE :phone OR company LIKE :company)'
+        OR email LIKE :email OR phone LIKE :phone OR company LIKE :company OR notes LIKE :notes)'
 );
 $searchTerm = '%' . $query . '%';
 $searchParams = [
@@ -100,6 +109,7 @@ $searchParams = [
     'email' => $searchTerm,
     'phone' => $searchTerm,
     'company' => $searchTerm,
+    'notes' => $searchTerm,
 ];
 $totalStatement->execute($searchParams);
 $totalContacts = (int) $totalStatement->fetchColumn();
@@ -110,8 +120,8 @@ $offset = ($page - 1) * $perPage;
 $listStatement = $db->prepare(
     'SELECT id, first_name, last_name, email, phone, company FROM contacts
      WHERE (CHAR_LENGTH(:query) = 0 OR first_name LIKE :first_name OR last_name LIKE :last_name
-        OR email LIKE :email OR phone LIKE :phone OR company LIKE :company)
-     ORDER BY last_name ASC, first_name ASC, id ASC LIMIT :limit OFFSET :offset'
+        OR email LIKE :email OR phone LIKE :phone OR company LIKE :company OR notes LIKE :notes)
+     ORDER BY ' . $sortOptions[$sort] . ' LIMIT :limit OFFSET :offset'
 );
 foreach ($searchParams as $key => $value) {
     $listStatement->bindValue(':' . $key, $value, PDO::PARAM_STR);
@@ -128,7 +138,7 @@ $flash = take_flash();
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="A simple PHP and MySQL contact manager.">
-    <title><?= $action === 'list' ? 'Contacts' : ($action === 'edit' ? 'Edit contact' : 'Add contact') ?> · Contact Manager</title>
+    <title><?= $action === 'list' ? 'Contacts' : ($action === 'edit' ? 'Edit contact' : ($action === 'view' ? 'Contact details' : 'Add contact')) ?> · Contact Manager</title>
     <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
@@ -145,7 +155,21 @@ $flash = take_flash();
         <div class="notice notice-<?= escape($flash['type']) ?>" role="status"><?= escape($flash['message']) ?></div>
     <?php endif; ?>
 
-    <?php if ($action !== 'list'): ?>
+    <?php if ($action === 'view'): ?>
+        <section class="form-panel detail-panel">
+            <a class="back-link" href="index.php">← Back to contacts</a>
+            <div class="section-heading"><p class="eyebrow">CONTACT DETAILS</p><h1><?= escape($contact['first_name'] . ' ' . $contact['last_name']) ?></h1></div>
+            <?php if ($contact['company'] !== ''): ?><p class="intro"><?= escape($contact['company']) ?></p><?php endif; ?>
+            <dl class="detail-grid">
+                <div><dt>Email address</dt><dd><?= $contact['email'] !== '' ? '<a href="mailto:' . escape($contact['email']) . '">' . escape($contact['email']) . '</a>' : '<span class="muted">Not provided</span>' ?></dd></div>
+                <div><dt>Phone number</dt><dd><?= $contact['phone'] !== '' ? '<a href="tel:' . escape($contact['phone']) . '">' . escape($contact['phone']) . '</a>' : '<span class="muted">Not provided</span>' ?></dd></div>
+                <div class="detail-notes"><dt>Notes</dt><dd><?= $contact['notes'] !== '' ? nl2br(escape($contact['notes'])) : '<span class="muted">No notes added.</span>' ?></dd></div>
+                <div><dt>Created</dt><dd><?= escape(date('M j, Y g:i a', strtotime($contact['created_at']))) ?></dd></div>
+                <div><dt>Last updated</dt><dd><?= escape(date('M j, Y g:i a', strtotime($contact['updated_at']))) ?></dd></div>
+            </dl>
+            <div class="form-actions"><a class="button button-quiet" href="index.php">Back to contacts</a><a class="button button-primary" href="index.php?action=edit&amp;id=<?= (int) $contactId ?>">Edit contact</a></div>
+        </section>
+    <?php elseif ($action !== 'list'): ?>
         <section class="form-panel">
             <a class="back-link" href="index.php">← Back to contacts</a>
             <div class="section-heading">
@@ -184,12 +208,22 @@ $flash = take_flash();
             <div class="list-heading">
                 <div><p class="eyebrow">THE PEOPLE YOU KNOW</p><h2 id="contacts-title">Your contacts <span class="count"><?= $totalContacts ?></span></h2></div>
                 <form method="get" action="index.php" class="search-form" role="search">
+                    <input type="hidden" name="sort" value="<?= escape($sort) ?>">
                     <label class="visually-hidden" for="contact-search">Search contacts</label>
                     <span aria-hidden="true">⌕</span><input id="contact-search" type="search" name="q" placeholder="Search people..." value="<?= escape($query) ?>">
                     <?php if ($query !== ''): ?><a class="clear-search" href="index.php" aria-label="Clear search">×</a><?php endif; ?>
                     <button type="submit">Search</button>
                 </form>
             </div>
+            <form method="get" action="index.php" class="sort-form">
+                <?php if ($query !== ''): ?><input type="hidden" name="q" value="<?= escape($query) ?>"><?php endif; ?>
+                <label for="contact-sort">Sort by</label>
+                <select id="contact-sort" name="sort" onchange="this.form.submit()">
+                    <option value="name" <?= $sort === 'name' ? 'selected' : '' ?>>Last name</option>
+                    <option value="company" <?= $sort === 'company' ? 'selected' : '' ?>>Company</option>
+                    <option value="updated" <?= $sort === 'updated' ? 'selected' : '' ?>>Recently updated</option>
+                </select>
+            </form>
 
             <?php if ($contacts === []): ?>
                 <div class="empty-state">
@@ -208,13 +242,13 @@ $flash = take_flash();
                             <td><?php if ($row['email'] !== ''): ?><a href="mailto:<?= escape($row['email']) ?>"><?= escape($row['email']) ?></a><?php else: ?><span class="muted">—</span><?php endif; ?></td>
                             <td><?php if ($row['phone'] !== ''): ?><a href="tel:<?= escape($row['phone']) ?>"><?= escape($row['phone']) ?></a><?php else: ?><span class="muted">—</span><?php endif; ?></td>
                             <td><?= $row['company'] !== '' ? escape($row['company']) : '<span class="muted">—</span>' ?></td>
-                            <td><div class="row-actions"><a class="icon-button" href="index.php?action=edit&amp;id=<?= (int) $row['id'] ?>" aria-label="Edit <?= escape($row['first_name'] . ' ' . $row['last_name']) ?>" title="Edit contact">✎</a><form method="post" action="index.php" onsubmit="return confirm('Delete this contact? This cannot be undone.');"><input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><button class="icon-button delete-button" type="submit" aria-label="Delete <?= escape($row['first_name'] . ' ' . $row['last_name']) ?>" title="Delete contact">⌫</button></form></div></td>
+                            <td><div class="row-actions"><a class="icon-button" href="index.php?action=view&amp;id=<?= (int) $row['id'] ?>" aria-label="View <?= escape($row['first_name'] . ' ' . $row['last_name']) ?>" title="View contact">↗</a><a class="icon-button" href="index.php?action=edit&amp;id=<?= (int) $row['id'] ?>" aria-label="Edit <?= escape($row['first_name'] . ' ' . $row['last_name']) ?>" title="Edit contact">✎</a><form method="post" action="index.php" onsubmit="return confirm('Delete this contact? This cannot be undone.');"><input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><button class="icon-button delete-button" type="submit" aria-label="Delete <?= escape($row['first_name'] . ' ' . $row['last_name']) ?>" title="Delete contact">⌫</button></form></div></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
                 </table></div>
                 <div class="list-footer"><span>Showing <?= $offset + 1 ?>–<?= min($offset + $perPage, $totalContacts) ?> of <?= $totalContacts ?> contacts</span>
-                    <?php if ($totalPages > 1): ?><nav class="pagination" aria-label="Contact pages"><?php if ($page > 1): ?><a href="?q=<?= rawurlencode($query) ?>&amp;page=<?= $page - 1 ?>" aria-label="Previous page">←</a><?php endif; ?><span>Page <?= $page ?> of <?= $totalPages ?></span><?php if ($page < $totalPages): ?><a href="?q=<?= rawurlencode($query) ?>&amp;page=<?= $page + 1 ?>" aria-label="Next page">→</a><?php endif; ?></nav><?php endif; ?>
+                    <?php if ($totalPages > 1): ?><nav class="pagination" aria-label="Contact pages"><?php if ($page > 1): ?><a href="?q=<?= rawurlencode($query) ?>&amp;sort=<?= rawurlencode($sort) ?>&amp;page=<?= $page - 1 ?>" aria-label="Previous page">←</a><?php endif; ?><span>Page <?= $page ?> of <?= $totalPages ?></span><?php if ($page < $totalPages): ?><a href="?q=<?= rawurlencode($query) ?>&amp;sort=<?= rawurlencode($sort) ?>&amp;page=<?= $page + 1 ?>" aria-label="Next page">→</a><?php endif; ?></nav><?php endif; ?>
                 </div>
             <?php endif; ?>
         </section>

@@ -27,7 +27,9 @@ Remove `-p` if your local MySQL root account has no password.
 ## Features
 
 - View contacts in alphabetical order, with ten contacts per page
-- Search by first name, last name, email, phone number, or company
+- Sort contacts by last name, company, or recently updated
+- Search by first name, last name, email, phone number, company, or notes
+- Open a contact details page to review notes and created/updated timestamps
 - Add and edit first name, last name, email, phone, company, and notes
 - Delete a contact after confirming the action
 - Validate required names, email format, and field lengths on the server
