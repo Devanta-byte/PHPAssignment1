@@ -2,3 +2,5 @@
 .env
 vendor/
 *.log
+/uploads/contacts/*
+!/uploads/contacts/.gitkeep

@@ -15,7 +15,7 @@ if (!in_array($action, $allowedActions, true)) {
 $errors = [];
 $contact = [
     'first_name' => '', 'last_name' => '', 'email' => '',
-    'phone' => '', 'company' => '', 'notes' => '',
+    'phone' => '', 'company' => '', 'notes' => '', 'image_path' => null,
 ];
 $contactId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
 
@@ -41,8 +41,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('index.php');
         }
 
+        $existing = contact_by_id($db, $deleteId);
         $statement = $db->prepare('DELETE FROM contacts WHERE id = :id');
         $statement->execute(['id' => $deleteId]);
+        if ($statement->rowCount() > 0 && $existing !== false) {
+            delete_contact_image($existing['image_path'] ?? null);
+        }
         set_flash($statement->rowCount() > 0 ? 'success' : 'error', $statement->rowCount() > 0 ? 'Contact deleted.' : 'That contact could not be found.');
         redirect('index.php');
     }
@@ -53,26 +57,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $saveAction = $submittedId > 0 ? 'edit' : 'create';
         $contactId = $submittedId;
         $errors = validate_contact($contact);
+        $imageError = validate_contact_image($_FILES['photo'] ?? []);
+        if ($imageError !== null) {
+            $errors['photo'] = $imageError;
+        }
+        $existingForSave = $saveAction === 'edit' ? contact_by_id($db, $submittedId) : false;
+        $contact['image_path'] = $existingForSave !== false ? ($existingForSave['image_path'] ?? null) : null;
 
-        if ($saveAction === 'edit' && ($submittedId < 1 || contact_by_id($db, $submittedId) === false)) {
+        if ($saveAction === 'edit' && ($submittedId < 1 || $existingForSave === false)) {
             set_flash('error', 'That contact could not be found.');
             redirect('index.php');
         }
 
         if ($errors === []) {
+            $uploadedImage = null;
+            if (($_FILES['photo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                try {
+                    $uploadedImage = save_contact_image($_FILES['photo']);
+                } catch (RuntimeException $exception) {
+                    $errors['photo'] = $exception->getMessage();
+                }
+            }
+        }
+
+        if ($errors === []) {
             $values = $contact;
+            if ($uploadedImage !== null) {
+                $values['image_path'] = $uploadedImage;
+            }
             if ($saveAction === 'edit') {
                 $values['id'] = $submittedId;
                 $statement = $db->prepare(
                     'UPDATE contacts SET first_name = :first_name, last_name = :last_name, email = :email,
-                     phone = :phone, company = :company, notes = :notes WHERE id = :id'
+                     phone = :phone, company = :company, notes = :notes, image_path = :image_path WHERE id = :id'
                 );
                 $statement->execute($values);
+                if ($uploadedImage !== null) {
+                    delete_contact_image($existingForSave['image_path'] ?? null);
+                }
                 set_flash('success', 'Contact updated.');
             } else {
                 $statement = $db->prepare(
-                    'INSERT INTO contacts (first_name, last_name, email, phone, company, notes)
-                     VALUES (:first_name, :last_name, :email, :phone, :company, :notes)'
+                    'INSERT INTO contacts (first_name, last_name, email, phone, company, notes, image_path)
+                     VALUES (:first_name, :last_name, :email, :phone, :company, :notes, :image_path)'
                 );
                 $statement->execute($values);
                 set_flash('success', 'Contact added.');
@@ -118,7 +145,7 @@ $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
 $listStatement = $db->prepare(
-    'SELECT id, first_name, last_name, email, phone, company FROM contacts
+    'SELECT id, first_name, last_name, email, phone, company, image_path FROM contacts
      WHERE (CHAR_LENGTH(:query) = 0 OR first_name LIKE :first_name OR last_name LIKE :last_name
         OR email LIKE :email OR phone LIKE :phone OR company LIKE :company OR notes LIKE :notes)
      ORDER BY ' . $sortOptions[$sort] . ' LIMIT :limit OFFSET :offset'
@@ -159,6 +186,7 @@ $flash = take_flash();
         <section class="form-panel detail-panel">
             <a class="back-link" href="index.php">← Back to contacts</a>
             <div class="section-heading"><p class="eyebrow">CONTACT DETAILS</p><h1><?= escape($contact['first_name'] . ' ' . $contact['last_name']) ?></h1></div>
+            <?php if (!empty($contact['image_path'])): ?><img class="detail-photo" src="<?= escape($contact['image_path']) ?>" alt="Photo of <?= escape($contact['first_name'] . ' ' . $contact['last_name']) ?>"><?php endif; ?>
             <?php if ($contact['company'] !== ''): ?><p class="intro"><?= escape($contact['company']) ?></p><?php endif; ?>
             <dl class="detail-grid">
                 <div><dt>Email address</dt><dd><?= $contact['email'] !== '' ? '<a href="mailto:' . escape($contact['email']) . '">' . escape($contact['email']) . '</a>' : '<span class="muted">Not provided</span>' ?></dd></div>
@@ -183,7 +211,7 @@ $flash = take_flash();
                 </div>
             <?php endif; ?>
 
-            <form method="post" action="index.php" class="contact-form">
+            <form method="post" action="index.php" class="contact-form" enctype="multipart/form-data">
                 <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
                 <input type="hidden" name="action" value="save">
                 <?php if ($action === 'edit'): ?><input type="hidden" name="id" value="<?= (int) $contactId ?>"><?php endif; ?>
@@ -193,6 +221,7 @@ $flash = take_flash();
                     <label>Email address<input type="email" name="email" maxlength="190" autocomplete="email" value="<?= escape($contact['email']) ?>" aria-invalid="<?= isset($errors['email']) ? 'true' : 'false' ?>"></label>
                     <label>Phone number<input type="tel" name="phone" maxlength="40" autocomplete="tel" value="<?= escape($contact['phone']) ?>" aria-invalid="<?= isset($errors['phone']) ? 'true' : 'false' ?>"></label>
                     <label class="full-width">Company<input name="company" maxlength="150" autocomplete="organization" value="<?= escape($contact['company']) ?>" aria-invalid="<?= isset($errors['company']) ? 'true' : 'false' ?>"></label>
+                    <label class="full-width">Profile photo <span class="field-hint">JPEG, PNG, or WebP · up to 5 MB</span><input class="photo-input" type="file" name="photo" accept="image/jpeg,image/png,image/webp" aria-invalid="<?= isset($errors['photo']) ? 'true' : 'false' ?>"><?php if (!empty($contact['image_path'])): ?><span class="current-photo"><img src="<?= escape($contact['image_path']) ?>" alt="Current contact photo"><span>Current photo — upload a new image to replace it.</span></span><?php endif; ?><?php if (isset($errors['photo'])): ?><span class="field-error"><?= escape($errors['photo']) ?></span><?php endif; ?></label>
                     <label class="full-width">Notes<textarea name="notes" maxlength="2000" rows="4" placeholder="Add a detail you want to remember"><?= escape($contact['notes']) ?></textarea><span class="field-hint">Up to 2,000 characters</span></label>
                 </div>
                 <div class="form-actions"><a class="button button-quiet" href="index.php">Cancel</a><button class="button button-primary" type="submit"><?= $action === 'edit' ? 'Save changes' : 'Save contact' ?></button></div>
@@ -238,7 +267,7 @@ $flash = take_flash();
                     <tbody>
                     <?php foreach ($contacts as $row): ?>
                         <tr>
-                            <td><div class="person"><span class="avatar" aria-hidden="true"><?= escape(mb_strtoupper(mb_substr($row['first_name'], 0, 1) . mb_substr($row['last_name'], 0, 1))) ?></span><span><strong><?= escape($row['first_name'] . ' ' . $row['last_name']) ?></strong><small>Contact</small></span></div></td>
+                            <td><div class="person"><?php if (!empty($row['image_path'])): ?><img class="avatar avatar-photo" src="<?= escape($row['image_path']) ?>" alt=""><?php else: ?><span class="avatar" aria-hidden="true"><?= escape(mb_strtoupper(mb_substr($row['first_name'], 0, 1) . mb_substr($row['last_name'], 0, 1))) ?></span><?php endif; ?><span><strong><?= escape($row['first_name'] . ' ' . $row['last_name']) ?></strong><small>Contact</small></span></div></td>
                             <td><?php if ($row['email'] !== ''): ?><a href="mailto:<?= escape($row['email']) ?>"><?= escape($row['email']) ?></a><?php else: ?><span class="muted">—</span><?php endif; ?></td>
                             <td><?php if ($row['phone'] !== ''): ?><a href="tel:<?= escape($row['phone']) ?>"><?= escape($row['phone']) ?></a><?php else: ?><span class="muted">—</span><?php endif; ?></td>
                             <td><?= $row['company'] !== '' ? escape($row['company']) : '<span class="muted">—</span>' ?></td>

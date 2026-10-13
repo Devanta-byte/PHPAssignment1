@@ -13,6 +13,11 @@ A small contact manager built with PHP, PDO, and MySQL. It lets you add, view, s
 1. Copy this project folder into XAMPP's `htdocs` directory.
 2. Start **Apache** and **MySQL** in the XAMPP Control Panel.
 3. Open phpMyAdmin at `http://localhost/phpmyadmin` and import `database.sql`. This creates the `contact_manager` database and its `contacts` table.
+   If you already imported the database for an earlier assignment, run this once in phpMyAdmin instead of re-importing:
+
+   ```sql
+   ALTER TABLE contacts ADD COLUMN image_path VARCHAR(255) NULL DEFAULT NULL;
+   ```
 4. If your MySQL credentials differ from the defaults, set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` in your PHP server environment. The defaults are `127.0.0.1`, `3306`, `contact_manager`, `root`, and an empty password.
 5. Visit `http://localhost/PHPAssignment1/`.
 
@@ -30,6 +35,7 @@ Remove `-p` if your local MySQL root account has no password.
 - Sort contacts by last name, company, or recently updated
 - Search by first name, last name, email, phone number, company, or notes
 - Open a contact details page to review notes and created/updated timestamps
+- Upload a JPEG, PNG, or WebP profile photo (up to 5 MB); replace it while editing or remove it with the contact
 - Add and edit first name, last name, email, phone, company, and notes
 - Delete a contact after confirming the action
 - Validate required names, email format, and field lengths on the server
@@ -43,6 +49,7 @@ Remove `-p` if your local MySQL root account has no password.
 - `includes/functions.php` — validation, escaping, CSRF, and helper functions
 - `database.sql` — database and table setup
 - `assets/styles.css` — responsive interface styles
+- `uploads/contacts/` — saved profile photos (excluded from Git)
 
 ## GitHub
 
