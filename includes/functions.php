@@ -136,6 +136,82 @@ function contact_by_id(PDO $db, int $id): array|false
     return $statement->fetch();
 }
 
+function registration_input(array $source): array
+{
+    return [
+        'first_name' => trim((string) ($source['first_name'] ?? '')),
+        'last_name' => trim((string) ($source['last_name'] ?? '')),
+        'email' => trim((string) ($source['email'] ?? '')),
+        'password' => (string) ($source['password'] ?? ''),
+        'confirm_password' => (string) ($source['confirm_password'] ?? ''),
+    ];
+}
+
+function validate_registration(PDO $db, array $user): array
+{
+    $errors = [];
+
+    if ($user['first_name'] === '' || mb_strlen($user['first_name']) > 100) {
+        $errors['first_name'] = 'Enter a first name with no more than 100 characters.';
+    }
+
+    if ($user['last_name'] === '' || mb_strlen($user['last_name']) > 100) {
+        $errors['last_name'] = 'Enter a last name with no more than 100 characters.';
+    }
+
+    if (!filter_var($user['email'], FILTER_VALIDATE_EMAIL) || mb_strlen($user['email']) > 190) {
+        $errors['email'] = 'Enter a valid email address with no more than 190 characters.';
+    } elseif (user_by_email($db, $user['email']) !== false) {
+        $errors['email'] = 'An account with that email address already exists.';
+    }
+
+    if (strlen($user['password']) < 8 || strlen($user['password']) > 72) {
+        $errors['password'] = 'Password must be between 8 and 72 characters.';
+    } elseif (!preg_match('/[A-Za-z]/', $user['password']) || !preg_match('/\d/', $user['password'])) {
+        $errors['password'] = 'Password must include at least one letter and one number.';
+    }
+
+    if ($user['password'] !== $user['confirm_password']) {
+        $errors['confirm_password'] = 'Passwords do not match.';
+    }
+
+    return $errors;
+}
+
+function user_by_email(PDO $db, string $email): array|false
+{
+    $statement = $db->prepare('SELECT * FROM users WHERE email = :email');
+    $statement->execute(['email' => $email]);
+
+    return $statement->fetch();
+}
+
+function log_in_user(array $user): void
+{
+    session_regenerate_id(true);
+    $_SESSION['user'] = [
+        'id' => (int) $user['id'],
+        'first_name' => $user['first_name'],
+        'last_name' => $user['last_name'],
+        'email' => $user['email'],
+    ];
+}
+
+function current_user(): ?array
+{
+    $user = $_SESSION['user'] ?? null;
+
+    return is_array($user) ? $user : null;
+}
+
+function require_login(): void
+{
+    if (current_user() === null) {
+        set_flash('error', 'Please log in to manage your contacts.');
+        redirect('login.php');
+    }
+}
+
 function set_flash(string $type, string $message): void
 {
     $_SESSION['flash'] = ['type' => $type, 'message' => $message];

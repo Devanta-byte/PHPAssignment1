@@ -5,6 +5,8 @@ session_start();
 require __DIR__ . '/config/database.php';
 require __DIR__ . '/includes/functions.php';
 
+require_login();
+$user = current_user();
 $db = database();
 $action = (string) ($_GET['action'] ?? 'list');
 $allowedActions = ['list', 'create', 'edit', 'view'];
@@ -175,7 +177,11 @@ $flash = take_flash();
             <span class="brand-mark" aria-hidden="true">C</span>
             <span><strong>Contact Manager</strong><small>Keep your people close</small></span>
         </a>
-        <a class="button button-primary" href="index.php?action=create"><span aria-hidden="true">＋</span> Add contact</a>
+        <div class="topbar-actions">
+            <span class="signed-in">Signed in as <strong><?= escape($user['first_name'] . ' ' . $user['last_name']) ?></strong></span>
+            <a class="button button-primary" href="index.php?action=create"><span aria-hidden="true">＋</span> Add contact</a>
+            <form method="post" action="logout.php"><input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>"><button class="button button-quiet" type="submit">Log out</button></form>
+        </div>
     </header>
 
     <?php if ($flash !== null): ?>
