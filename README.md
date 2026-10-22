@@ -13,7 +13,7 @@ A small contact manager built with PHP, PDO, and MySQL. Users register for an ac
 1. Copy this project folder into XAMPP's `htdocs` directory.
 2. Start **Apache** and **MySQL** in the XAMPP Control Panel.
 3. Open phpMyAdmin at `http://localhost/phpmyadmin` and import `database.sql`. This creates the `contact_manager` database with its `users` and `contacts` tables.
-   If you already imported the database for an earlier assignment, run these once in phpMyAdmin instead of re-importing (skip the `ALTER TABLE` if you already added the photo column for Assignment 3):
+   If you already imported the database for an earlier assignment, run the applicable upgrade SQL below once in phpMyAdmin instead of re-importing. Do not rerun an `ALTER TABLE` step if you have already applied it.
 
    ```sql
    ALTER TABLE contacts ADD COLUMN image_path VARCHAR(255) NULL DEFAULT NULL;
@@ -28,7 +28,14 @@ A small contact manager built with PHP, PDO, and MySQL. Users register for an ac
        PRIMARY KEY (id),
        UNIQUE KEY uq_users_email (email)
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+   ALTER TABLE contacts
+       ADD COLUMN user_id INT UNSIGNED NULL AFTER id,
+       ADD INDEX idx_contacts_user_id (user_id),
+       ADD CONSTRAINT fk_contacts_user
+           FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL;
    ```
+   Existing contacts are kept with `user_id` set to `NULL`, so they are not shown in any user's address book. Assign `user_id` manually if you want to make those contacts visible to a particular account.
 4. If your MySQL credentials differ from the defaults, set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` in your PHP server environment. The defaults are `127.0.0.1`, `3306`, `contact_manager`, `root`, and an empty password.
 5. Visit `http://localhost/PHPAssignment1/`. You'll be sent to the login page — choose **Create account** to register, and you'll be logged in automatically.
 
@@ -44,7 +51,7 @@ Remove `-p` if your local MySQL root account has no password.
 
 - Register an account with first name, last name, email, and password (minimum 8 characters, with a letter and a number)
 - Log in with email and password; passwords are stored with `password_hash()` and checked with `password_verify()`
-- Contact pages require a logged-in user; log out from the top bar
+- Contact pages require a logged-in user; each contact is associated with its owner, and log out from the top bar
 - View contacts in alphabetical order, with ten contacts per page
 - Sort contacts by last name, company, or recently updated
 - Search by first name, last name, email, phone number, company, or notes

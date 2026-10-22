@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS contacts (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id INT UNSIGNED NULL,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(190) NOT NULL DEFAULT '',
@@ -27,6 +28,8 @@ CREATE TABLE IF NOT EXISTS contacts (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    INDEX idx_contacts_user_id (user_id),
     INDEX idx_contacts_name (last_name, first_name),
-    INDEX idx_contacts_email (email)
+    INDEX idx_contacts_email (email),
+    CONSTRAINT fk_contacts_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

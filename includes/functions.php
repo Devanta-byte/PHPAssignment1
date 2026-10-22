@@ -128,10 +128,10 @@ function delete_contact_image(string|null $imagePath): void
     }
 }
 
-function contact_by_id(PDO $db, int $id): array|false
+function contact_by_id(PDO $db, int $id, int $userId): array|false
 {
-    $statement = $db->prepare('SELECT * FROM contacts WHERE id = :id');
-    $statement->execute(['id' => $id]);
+    $statement = $db->prepare('SELECT * FROM contacts WHERE id = :id AND user_id = :user_id');
+    $statement->execute(['id' => $id, 'user_id' => $userId]);
 
     return $statement->fetch();
 }

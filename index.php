@@ -22,7 +22,7 @@ $contact = [
 $contactId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
 
 if (in_array($action, ['edit', 'view'], true) && $contactId > 0) {
-    $existingContact = contact_by_id($db, $contactId);
+    $existingContact = contact_by_id($db, $contactId, (int) $user['id']);
     if ($existingContact === false) {
         set_flash('error', 'That contact could not be found.');
         redirect('index.php');
@@ -43,9 +43,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('index.php');
         }
 
-        $existing = contact_by_id($db, $deleteId);
-        $statement = $db->prepare('DELETE FROM contacts WHERE id = :id');
-        $statement->execute(['id' => $deleteId]);
+        $existing = contact_by_id($db, $deleteId, (int) $user['id']);
+        $statement = $db->prepare('DELETE FROM contacts WHERE id = :id AND user_id = :user_id');
+        $statement->execute(['id' => $deleteId, 'user_id' => (int) $user['id']]);
         if ($statement->rowCount() > 0 && $existing !== false) {
             delete_contact_image($existing['image_path'] ?? null);
         }
@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($imageError !== null) {
             $errors['photo'] = $imageError;
         }
-        $existingForSave = $saveAction === 'edit' ? contact_by_id($db, $submittedId) : false;
+        $existingForSave = $saveAction === 'edit' ? contact_by_id($db, $submittedId, (int) $user['id']) : false;
         $contact['image_path'] = $existingForSave !== false ? ($existingForSave['image_path'] ?? null) : null;
 
         if ($saveAction === 'edit' && ($submittedId < 1 || $existingForSave === false)) {
@@ -91,8 +91,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $values['id'] = $submittedId;
                 $statement = $db->prepare(
                     'UPDATE contacts SET first_name = :first_name, last_name = :last_name, email = :email,
-                     phone = :phone, company = :company, notes = :notes, image_path = :image_path WHERE id = :id'
+                     phone = :phone, company = :company, notes = :notes, image_path = :image_path
+                     WHERE id = :id AND user_id = :user_id'
                 );
+                $values['user_id'] = (int) $user['id'];
                 $statement->execute($values);
                 if ($uploadedImage !== null) {
                     delete_contact_image($existingForSave['image_path'] ?? null);
@@ -100,9 +102,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 set_flash('success', 'Contact updated.');
             } else {
                 $statement = $db->prepare(
-                    'INSERT INTO contacts (first_name, last_name, email, phone, company, notes, image_path)
-                     VALUES (:first_name, :last_name, :email, :phone, :company, :notes, :image_path)'
+                    'INSERT INTO contacts (user_id, first_name, last_name, email, phone, company, notes, image_path)
+                     VALUES (:user_id, :first_name, :last_name, :email, :phone, :company, :notes, :image_path)'
                 );
+                $values['user_id'] = (int) $user['id'];
                 $statement->execute($values);
                 set_flash('success', 'Contact added.');
             }
@@ -127,11 +130,12 @@ $page = max(1, filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT) ?: 1);
 $perPage = 10;
 $totalStatement = $db->prepare(
     'SELECT COUNT(*) FROM contacts
-     WHERE (CHAR_LENGTH(:query) = 0 OR first_name LIKE :first_name OR last_name LIKE :last_name
+     WHERE user_id = :user_id AND (CHAR_LENGTH(:query) = 0 OR first_name LIKE :first_name OR last_name LIKE :last_name
         OR email LIKE :email OR phone LIKE :phone OR company LIKE :company OR notes LIKE :notes)'
 );
 $searchTerm = '%' . $query . '%';
 $searchParams = [
+    'user_id' => (int) $user['id'],
     'query' => $query,
     'first_name' => $searchTerm,
     'last_name' => $searchTerm,
@@ -148,7 +152,7 @@ $offset = ($page - 1) * $perPage;
 
 $listStatement = $db->prepare(
     'SELECT id, first_name, last_name, email, phone, company, image_path FROM contacts
-     WHERE (CHAR_LENGTH(:query) = 0 OR first_name LIKE :first_name OR last_name LIKE :last_name
+     WHERE user_id = :user_id AND (CHAR_LENGTH(:query) = 0 OR first_name LIKE :first_name OR last_name LIKE :last_name
         OR email LIKE :email OR phone LIKE :phone OR company LIKE :company OR notes LIKE :notes)
      ORDER BY ' . $sortOptions[$sort] . ' LIMIT :limit OFFSET :offset'
 );
